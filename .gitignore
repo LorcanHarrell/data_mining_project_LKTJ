@@ -1,4 +1,4 @@
-﻿# Local credentials and environment settings
+# Local credentials and environment settings
 .env
 .env.*
 !.env.example
@@ -15,3 +15,14 @@ __pycache__/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Additional virtual environments
+env/
+ENV/
+
+# VS Code settings
+.vscode/
+
+# Additional OS temporary files
+._*
+$RECYCLE.BIN/
