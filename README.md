@@ -1,19 +1,30 @@
-# data_mining_project_LKTJ
+# Hydrogen-Bond Acceptors and Acute Toxicity
 
-Shared repository for the LKTJ team's data mining project.
-
-## Getting started
-
-```sh
-git clone https://github.com/LorcanHarrell/data_mining_project_LKTJ.git
-cd data_mining_project_LKTJ
-```
-
-Create a branch for your changes and open a pull request when they are ready for review.
-
-**Research question:**
-Is an increased number of hydrogen-bond acceptors associated with greater acute toxicity in organic compounds?
+**Research question:** Is an increased number of hydrogen-bond acceptors associated with greater acute toxicity in organic compounds?
 
 **H₀:** There is no significant association between the number of hydrogen-bond acceptors and acute toxicity.
 
-**H₁:** Compounds with more hydrogen-bond acceptors have significantly lower LD₅₀ values and are therefore more acutely toxic.
+**H₁:** Compounds with more hydrogen-bond acceptors have significantly higher −log₁₀(LD₅₀ mol/kg) values and are therefore more acutely toxic.
+
+**Dataset:** Organic-compound records with names, SMILES, and molecular descriptors, with `NumHAcceptors` (hydrogen-bond acceptor count) and `LD50` (−log₁₀(LD₅₀ mol/kg), where higher values indicate greater acute toxicity) as the main variables.
+
+**Provenance:** ChemIDplus → EPA TEST → current dataset (`ld50-smiles-descriptors-dataset.csv`).
+
+## Current Progress
+
+- `notebooks/01_data_exploration.ipynb` contains cells to load the CSV, preview rows, inspect dimensions, columns and data types, examine summary statistics, and check missing values and duplicate rows.
+- No execution counts or outputs are saved, so successful loading and inspection results are not recorded.
+
+## Roadmap
+
+- [x] Select dataset and define research question
+- [x] Load and inspect the dataset
+- [x] Identify `LD50` and `NumHAcceptors` as the main variables
+- [x] Check missing values and summary statistics
+- [ ] Clean and prepare the data
+- [ ] Visualise LD50 and hydrogen-bond acceptor distributions
+- [ ] Test the relationship between `NumHAcceptors` and `LD50`
+- [ ] Perform statistical hypothesis testing
+- [ ] Investigate other molecular properties that may influence the relationship
+- [ ] Apply a machine-learning model as supporting analysis
+- [ ] Interpret results and draw a final conclusion
