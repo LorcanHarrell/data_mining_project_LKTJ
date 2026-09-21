@@ -12,8 +12,8 @@
 
 ## Current Progress
 
-- `notebooks/01_data_exploration.ipynb` contains cells to load the CSV, preview rows, inspect dimensions, columns and data types, examine summary statistics, and check missing values and duplicate rows.
-- No execution counts or outputs are saved, so successful loading and inspection results are not recorded.
+- `notebooks/01_data_exploration.ipynb` loads and inspects the dataset, completes cleaning, validates numeric target values and non-negative whole-number acceptor counts, and inspects extreme values.
+- The cleaned dataset is saved to `data/processed/ld50_cleaned.csv` with 7,388 rows: 1 row missing `LD50` and 8 exact duplicate rows were removed. Other records sharing SMILES and extreme values were retained; `LD50` was not transformed.
 
 ## Roadmap
 
@@ -21,7 +21,7 @@
 - [x] Load and inspect the dataset
 - [x] Identify `LD50` and `NumHAcceptors` as the main variables
 - [x] Check missing values and summary statistics
-- [ ] Clean and prepare the data
+- [x] Clean and prepare the data
 - [ ] Visualise LD50 and hydrogen-bond acceptor distributions
 - [ ] Test the relationship between `NumHAcceptors` and `LD50`
 - [ ] Perform statistical hypothesis testing
