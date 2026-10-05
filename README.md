@@ -12,8 +12,9 @@
 
 ## Current Progress
 
-- `notebooks/01_data_exploration.ipynb` loads and inspects the dataset, completes cleaning, validates numeric target values and non-negative whole-number acceptor counts, and inspects extreme values.
+- Initial exploration and cleaning are complete in `notebooks/01_data_exploration.ipynb`; visualisation is in `notebooks/02_data_visualisation.ipynb`, with six graphs saved in `figures/`.
 - The cleaned dataset is saved to `data/processed/ld50_cleaned.csv` with 7,388 rows: 1 row missing `LD50` and 8 exact duplicate rows were removed. Other records sharing SMILES and extreme values were retained; `LD50` was not transformed.
+- Initial relationship and molecular-size checks have begun; final hypothesis testing remains pending.
 
 ## Roadmap
 
@@ -22,7 +23,7 @@
 - [x] Identify `LD50` and `NumHAcceptors` as the main variables
 - [x] Check missing values and summary statistics
 - [x] Clean and prepare the data
-- [ ] Visualise LD50 and hydrogen-bond acceptor distributions
+- [x] Visualise LD50 and hydrogen-bond acceptor distributions
 - [ ] Test the relationship between `NumHAcceptors` and `LD50`
 - [ ] Perform statistical hypothesis testing
 - [ ] Investigate other molecular properties that may influence the relationship
