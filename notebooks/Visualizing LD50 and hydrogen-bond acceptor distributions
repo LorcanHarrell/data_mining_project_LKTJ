@@ -1,0 +1,88 @@
+#1. Set up
+from pathlib import Path  # for building file paths
+
+import numpy as np  # for arrays and number ranges
+import pandas as pd  # for loading and handling the data
+import matplotlib.pyplot as plt  # for plotting
+from scipy import stats  # for the KDE and Q-Q plot
+
+project_root = Path(__file__).resolve().parent.parent  # project folder (one level above this script's folder)
+csv_path = project_root / 'data' / 'processed' / 'ld50_cleaned.csv'  # path to the cleaned data
+clean_df = pd.read_csv(csv_path)  # load the cleaned data
+main_columns = ['LD50', 'NumHAcceptors']  # the two columns being looked at
+
+plt.rcParams['figure.figsize'] = (8, 5)  # default figure size in inches
+plt.rcParams['axes.grid'] = True  # show a grid on every plot
+plt.rcParams['grid.alpha'] = 0.3  # make the grid faint
+
+fig_dir = project_root / 'figures'  # folder to save figures in
+fig_dir.mkdir(parents=True, exist_ok=True)  # create it if it doesn't exist yet
+
+ld50 = clean_df['LD50']  # LD50 values (already -log10 mol/kg)
+hba = clean_df['NumHAcceptors'].astype(int)  # acceptor counts as whole numbers
+
+
+#2. Shape stats
+# skew > 0 = longer right tail, kurtosis > 0 = heavier tails than normal
+stats_table = clean_df[main_columns].agg(['mean', 'median', 'std', 'skew', 'kurt']).T  # summary stats, one row per column
+print(stats_table.round(3))  # print the table to 3 decimal places
+
+
+#3. LD50 histogram + KDE
+fig, ax = plt.subplots()  # new figure with one plot
+
+ax.hist(ld50, bins=40, density=True, color='steelblue', edgecolor='white', alpha=0.7)  # histogram scaled to density so the KDE lines up
+
+kde = stats.gaussian_kde(ld50)  # fit a smoothed density curve to LD50
+x = np.linspace(ld50.min(), ld50.max(), 300)  # 300 evenly spaced points across the LD50 range
+ax.plot(x, kde(x), color='firebrick', lw=2, label='KDE')  # draw the KDE curve
+
+ax.axvline(ld50.mean(), color='k', ls='--', label=f'mean = {ld50.mean():.2f}')  # dashed line at the mean
+ax.axvline(ld50.median(), color='green', ls=':', lw=2, label=f'median = {ld50.median():.2f}')  # dotted line at the median
+
+ax.set_xlabel('LD50 (-log10 mol/kg)')  # x-axis label
+ax.set_ylabel('Density')  # y-axis label
+ax.set_title('LD50 distribution')  # plot title
+ax.legend()  # show the legend
+plt.tight_layout()  # stop labels overlapping
+plt.savefig(fig_dir / 'ld50_hist.png', dpi=300)  # save the figure
+plt.show()  # display the figure
+
+q1, q3 = ld50.quantile([0.25, 0.75])  # first and third quartiles
+iqr = q3 - q1  # interquartile range
+n_out = ((ld50 < q1 - 1.5 * iqr) | (ld50 > q3 + 1.5 * iqr)).sum()  # count points outside 1.5*IQR (kept, just checking)
+print(f'{n_out} points outside 1.5*IQR ({n_out / len(ld50):.1%})')  # print the count and percentage
+
+
+#4. LD50 Q-Q plot
+fig, ax = plt.subplots(figsize=(6, 6))  # new square figure
+stats.probplot(ld50, dist='norm', plot=ax)  # LD50 quantiles vs normal quantiles, with a reference line
+ax.get_lines()[0].set(markersize=3, alpha=0.4)  # smaller, see-through points so overlaps show
+ax.set_title('Q-Q plot of LD50')  # plot title
+plt.tight_layout()  # stop labels overlapping
+plt.savefig(fig_dir / 'ld50_qq.png', dpi=300)  # save the figure
+plt.show()  # display the figure
+
+
+#5. H-bond acceptor counts
+counts = hba.value_counts().reindex(range(hba.max() + 1), fill_value=0)  # compounds per acceptor count, with 0 for missing counts
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))  # two plots side by side
+
+for ax in (ax1, ax2):  # draw the same chart on both plots
+    ax.bar(counts.index, counts.values, color='darkorange', edgecolor='white')  # one bar per acceptor count (data is discrete)
+    ax.axvline(hba.median(), color='k', ls='--', label=f'median = {hba.median():.0f}')  # dashed line at the median
+    ax.set_xlabel('H-bond acceptors')  # x-axis label
+    ax.set_ylabel('Count')  # y-axis label
+    ax.legend()  # show the legend
+
+ax2.set_yscale('log')  # log scale on the right plot so the tail is visible
+ax1.set_title('Linear')  # left plot title
+ax2.set_title('Log scale')  # right plot title
+
+plt.tight_layout()  # stop labels overlapping
+plt.savefig(fig_dir / 'hba_counts.png', dpi=300)  # save the figure
+plt.show()  # display the figure
+
+print(f'<= 10 acceptors: {(hba <= 10).mean():.1%}')  # share of compounds within the Lipinski limit
+print(f'90th percentile: {hba.quantile(0.9):.0f}, 99th: {hba.quantile(0.99):.0f}')  # 90th and 99th percentile counts
