@@ -1,0 +1,572 @@
+"""
+Create the three new graphs for the hydrogen-bond acceptor project:
+
+Graph 3: Acceptor count against transformed LD50.
+Graph 4: Toxicity boxplots by acceptor count, with sample sizes.
+Graph 6: Unadjusted and adjusted hydrogen-bond acceptor association.
+
+Run from the repository root:
+    python hba_toxicity_plots.py
+
+Requires:
+    pandas, numpy, matplotlib, scipy
+
+Input:
+    data/processed/ld50_cleaned.csv
+
+The LD50 column is already -log10(LD50 in mol/kg).
+Higher scores indicate greater acute oral toxicity in rats.
+Do not transform LD50 again.
+"""
+
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.stats import t
+
+
+def fit_hba_association(model_data, predictors, cluster_codes):
+    """
+    Fit a linear regression and calculate the HBA coefficient
+    with a 95% confidence interval.
+
+    Confidence intervals account for repeated identical SMILES.
+
+    Method reference:
+    https://www.statsmodels.org/stable/_modules/statsmodels/stats/sandwich_covariance.html
+    """
+
+    x = np.column_stack([
+        np.ones(len(model_data)),
+        model_data[predictors],
+    ])
+
+    y = model_data["LD50"].to_numpy()
+    n, k = x.shape
+
+    beta, _, rank, _ = np.linalg.lstsq(x, y, rcond=None)
+
+    if rank != k or n <= k:
+        raise ValueError(
+            "The regression needs independent predictors "
+            "and more observations than model parameters."
+        )
+
+    residuals = y - x @ beta
+    bread = np.linalg.inv(x.T @ x)
+
+    number_of_clusters = int(cluster_codes.max() + 1)
+
+    if number_of_clusters < 2:
+        raise ValueError(
+            "At least two SMILES groups are required "
+            "to calculate a confidence interval."
+        )
+
+    cluster_scores = np.zeros((number_of_clusters, k))
+
+    np.add.at(
+        cluster_scores,
+        cluster_codes,
+        x * residuals[:, None],
+    )
+
+    correction = (
+        number_of_clusters / (number_of_clusters - 1)
+    ) * (
+        (n - 1) / (n - k)
+    )
+
+    covariance = (
+        correction
+        * bread
+        @ (cluster_scores.T @ cluster_scores)
+        @ bread
+    )
+
+    hba_index = 1 + predictors.index("NumHAcceptors")
+
+    standard_error = np.sqrt(
+        covariance[hba_index, hba_index]
+    )
+
+    coefficient = beta[hba_index]
+
+    margin = (
+        t.ppf(0.975, number_of_clusters - 1)
+        * standard_error
+    )
+
+    return (
+        coefficient,
+        coefficient - margin,
+        coefficient + margin,
+    )
+
+
+def create_adjusted_plot(df, output_dir):
+    """
+    Graph 6: Compare unadjusted and adjusted HBA associations.
+
+    Both models use exactly the same complete records.
+    """
+
+    columns = [
+        "LD50",
+        "NumHAcceptors",
+        "MolWt",
+        "MolLogP",
+    ]
+
+    model_data = (
+        df[columns]
+        .apply(pd.to_numeric, errors="raise")
+        .dropna()
+    )
+
+    excluded = len(df) - len(model_data)
+
+    if (
+        model_data.empty
+        or not np.isfinite(model_data.to_numpy()).all()
+    ):
+        raise ValueError(
+            "The model needs complete, finite numeric values."
+        )
+
+    smiles = df.loc[model_data.index, "SMILES"]
+
+    if smiles.isna().any():
+        raise ValueError(
+            "SMILES are required to group repeated records."
+        )
+
+    cluster_codes, _ = pd.factorize(
+        smiles,
+        sort=True,
+    )
+
+    # Use the same rows for both models so that differences
+    # reflect adjustment rather than different missing data.
+    model_definitions = [
+        (
+            "Unadjusted\nHBA only",
+            ["NumHAcceptors"],
+            "#3977AC",
+        ),
+        (
+            "Adjusted\nHBA + molecular weight + logP",
+            ["NumHAcceptors", "MolWt", "MolLogP"],
+            "#C26725",
+        ),
+    ]
+
+    fig, ax = plt.subplots(figsize=(11.5, 5.5))
+
+    rows = [1, 0]
+    intervals = []
+
+    for (label, predictors, color), row in zip(
+        model_definitions,
+        rows,
+    ):
+        coefficient, lower, upper = fit_hba_association(
+            model_data,
+            predictors,
+            cluster_codes,
+        )
+
+        intervals.extend([lower, upper])
+
+        ax.errorbar(
+            coefficient,
+            row,
+            xerr=[
+                [coefficient - lower],
+                [upper - coefficient],
+            ],
+            fmt="o",
+            color=color,
+            markersize=9,
+            capsize=6,
+            elinewidth=2.5,
+        )
+
+        ax.annotate(
+            f"{coefficient:.3f} "
+            f"(95% CI: {lower:.3f} to {upper:.3f})",
+            xy=(coefficient, row),
+            xytext=(0, 17),
+            textcoords="offset points",
+            ha="center",
+            fontsize=10,
+            color=color,
+        )
+
+        print(
+            f"{label.splitlines()[0]} HBA coefficient: "
+            f"{coefficient:.6f}; "
+            f"95% CI [{lower:.6f}, {upper:.6f}]"
+        )
+
+    xmin = min(0, min(intervals))
+    xmax = max(0, max(intervals))
+    padding = max((xmax - xmin) * 0.35, 0.01)
+
+    ax.set_xlim(xmin - padding, xmax + padding)
+    ax.set_ylim(-0.6, 1.6)
+
+    ax.axvline(
+        0,
+        color="#78828C",
+        linestyle="--",
+        linewidth=1.2,
+    )
+
+    ax.set_yticks(rows)
+
+    ax.set_yticklabels(
+        [item[0] for item in model_definitions],
+        fontsize=11,
+    )
+
+    ax.set_title(
+        "Hydrogen-bond acceptor association "
+        "before and after adjustment",
+        fontsize=15,
+        pad=17,
+    )
+
+    ax.set_xlabel(
+        "Change in −log₁₀(LD₅₀ in mol/kg)\n"
+        "per additional hydrogen-bond acceptor",
+        fontsize=11,
+    )
+
+    ax.grid(
+        axis="x",
+        color="#DCE2E8",
+        linewidth=0.7,
+    )
+
+    ax.set_axisbelow(True)
+
+    for spine in ["top", "right", "left"]:
+        ax.spines[spine].set_visible(False)
+
+    ax.tick_params(axis="y", length=0)
+
+    fig.text(
+        0.05,
+        0.065,
+        f"Both models: {len(model_data):,} complete records; "
+        f"{excluded} excluded for missing molecular weight or logP.\n"
+        "95% confidence intervals account for repeated identical SMILES. "
+        "Exploratory linear-model associations; no causal interpretation.",
+        fontsize=8.5,
+        color="#46515C",
+    )
+
+    fig.tight_layout(rect=(0, 0.15, 1, 1))
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    path = output_dir / "03_hba_adjusted_association.png"
+
+    fig.savefig(
+        path,
+        dpi=300,
+        facecolor="white",
+    )
+
+    print(f"Saved: {path}")
+
+    return fig
+
+
+def create_plots(
+    data_path="data/processed/ld50_cleaned.csv",
+    output_dir="figures",
+    show=True,
+):
+    df = pd.read_csv(data_path)
+
+    columns = ["NumHAcceptors", "LD50"]
+
+    data = df[columns].apply(
+        pd.to_numeric,
+        errors="raise",
+    )
+
+    # Stop on invalid values rather than silently deleting records.
+    if (
+        data.empty
+        or not np.isfinite(data.to_numpy()).all()
+    ):
+        raise ValueError(
+            "Acceptor counts and LD50 must be finite numeric values."
+        )
+
+    if (
+        (data["NumHAcceptors"] < 0).any()
+        or (data["NumHAcceptors"] % 1 != 0).any()
+    ):
+        raise ValueError(
+            "Hydrogen-bond acceptor counts "
+            "must be non-negative integers."
+        )
+
+    data["NumHAcceptors"] = (
+        data["NumHAcceptors"].astype(int)
+    )
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    groups = data.groupby(
+        "NumHAcceptors",
+        sort=True,
+    )["LD50"]
+
+    summary = groups.agg(["count", "median"])
+
+    counts = summary.index.to_numpy()
+
+    values = [
+        groups.get_group(count).to_numpy()
+        for count in counts
+    ]
+
+    rng = np.random.default_rng(42)
+
+    y_label = (
+        "Acute oral-rat toxicity\n"
+        "−log₁₀(LD₅₀ in mol/kg)"
+    )
+
+    y_limits = (
+        data["LD50"].min() - 0.25,
+        data["LD50"].max() + 0.4,
+    )
+
+    # GRAPH 3: Acceptor count versus transformed LD50.
+    fig1, ax1 = plt.subplots(figsize=(12, 6.5))
+
+    jitter = rng.uniform(
+        -0.18,
+        0.18,
+        size=len(data),
+    )
+
+    ax1.scatter(
+        data["NumHAcceptors"] + jitter,
+        data["LD50"],
+        s=16,
+        alpha=0.22,
+        color="#3977AC",
+        edgecolors="none",
+        label="Compound records",
+        rasterized=True,
+    )
+
+    # Diamonds show group medians, not a fitted regression line.
+    medians = summary.loc[summary["count"] >= 5]
+
+    ax1.scatter(
+        medians.index,
+        medians["median"],
+        s=48,
+        marker="D",
+        color="#202B36",
+        edgecolors="white",
+        linewidths=0.5,
+        label="Group median (n ≥ 5)",
+        zorder=3,
+    )
+
+    ax1.set_title(
+        "Hydrogen-bond acceptors and acute toxicity",
+        fontsize=17,
+        pad=15,
+    )
+
+    ax1.set_xlabel(
+        "Hydrogen-bond acceptors per compound",
+        fontsize=11,
+    )
+
+    ax1.set_ylabel(y_label, fontsize=11)
+
+    ax1.set_xlim(
+        counts.min() - 0.7,
+        counts.max() + 0.7,
+    )
+
+    ax1.set_ylim(y_limits)
+
+    ax1.legend(
+        loc="upper right",
+        frameon=False,
+    )
+
+    fig1.text(
+        0.10,
+        0.04,
+        f"All {len(data):,} records retained. "
+        "Horizontal jitter is for visibility only. "
+        "Higher score = greater toxicity.",
+        fontsize=9,
+        color="#46515C",
+    )
+
+    # GRAPH 4: Toxicity boxplots by acceptor count.
+    fig2, ax2 = plt.subplots(figsize=(14, 6.8))
+
+    positions = np.arange(1, len(counts) + 1)
+
+    enough_data = (
+        summary["count"].to_numpy() >= 5
+    )
+
+    ax2.boxplot(
+        [
+            value
+            for value, keep in zip(values, enough_data)
+            if keep
+        ],
+        positions=positions[enough_data],
+        widths=0.6,
+        patch_artist=True,
+        showfliers=True,
+        whis=1.5,
+        boxprops={
+            "facecolor": "#BCD3E6",
+            "edgecolor": "#3977AC",
+        },
+        medianprops={
+            "color": "#202B36",
+            "linewidth": 1.8,
+        },
+        whiskerprops={
+            "color": "#3977AC",
+        },
+        capprops={
+            "color": "#3977AC",
+        },
+        flierprops={
+            "marker": "o",
+            "markersize": 3,
+            "alpha": 0.35,
+            "markerfacecolor": "#3977AC",
+            "markeredgecolor": "none",
+        },
+    )
+
+    # For groups with fewer than five records,
+    # show individual points instead of a box.
+    for position, value, keep in zip(
+        positions,
+        values,
+        enough_data,
+    ):
+        if not keep:
+            ax2.scatter(
+                position
+                + rng.uniform(-0.08, 0.08, len(value)),
+                value,
+                s=35,
+                color="#C26725",
+                edgecolors="white",
+                linewidths=0.4,
+                zorder=3,
+            )
+
+    labels = [
+        f"{count}\nn={len(value):,}"
+        for count, value in zip(counts, values)
+    ]
+
+    ax2.set_xticks(positions)
+    ax2.set_xticklabels(labels, fontsize=8)
+
+    ax2.set_xlim(0.4, len(counts) + 0.6)
+    ax2.set_ylim(y_limits)
+
+    ax2.set_title(
+        "Toxicity by hydrogen-bond acceptor count",
+        fontsize=17,
+        pad=15,
+    )
+
+    ax2.set_xlabel(
+        "Hydrogen-bond acceptors per compound; "
+        "n = group sample size",
+        fontsize=11,
+    )
+
+    ax2.set_ylabel(y_label, fontsize=11)
+
+    fig2.text(
+        0.09,
+        0.04,
+        "Boxes: middle 50%; dark line: median; "
+        "whiskers: up to 1.5×IQR. "
+        "Orange points: groups with n < 5. "
+        "All records retained.",
+        fontsize=9,
+        color="#46515C",
+    )
+
+    # Save the scatterplot and boxplots.
+    filenames = [
+        "01_hba_toxicity_scatter.png",
+        "02_hba_toxicity_boxplots.png",
+    ]
+
+    for fig, ax, filename in zip(
+        [fig1, fig2],
+        [ax1, ax2],
+        filenames,
+    ):
+        ax.set_axisbelow(True)
+
+        ax.grid(
+            axis="y",
+            color="#DCE2E8",
+            linewidth=0.7,
+        )
+
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        fig.tight_layout(rect=(0, 0.09, 1, 1))
+
+        fig.savefig(
+            output_dir / filename,
+            dpi=300,
+            facecolor="white",
+        )
+
+        print(f"Saved: {output_dir / filename}")
+
+    print(
+        f"Plotted {len(data):,} records across "
+        f"{len(counts)} acceptor-count groups."
+    )
+
+    # GRAPH 6: Adjusted association.
+    fig3 = create_adjusted_plot(df, output_dir)
+
+    if show:
+        plt.show()
+    else:
+        plt.close(fig1)
+        plt.close(fig2)
+        plt.close(fig3)
+
+
+if __name__ == "__main__":
+    create_plots()
