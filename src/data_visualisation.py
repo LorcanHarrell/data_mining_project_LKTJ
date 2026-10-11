@@ -1,13 +1,15 @@
 """
 Create the six selected graphs for the hydrogen-bond acceptor project.
 
-Save this script in notebooks/ (one folder below the project root).
+Run: python src/data_visualisation.py
+Use --no-show to save the figures without opening plot windows.
 Requires: pandas, numpy, matplotlib, scipy.
 
 LD50 is already -log10(LD50 in mol/kg).
 Higher scores mean greater acute oral toxicity in rats.
 """
 
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -160,7 +162,7 @@ def create_all_plots(csv_path, fig_dir, show=True):
         medians.index, medians["median"],
         s=48, marker="D", color="#202B36",
         edgecolors="white", linewidths=0.5,
-        label="Group median (n ≥ 5)", zorder=3
+        label="Group median (n >= 5)", zorder=3
     )
     ax.set_title(
         "Hydrogen-bond acceptors and acute toxicity", fontsize=17, pad=15
@@ -337,8 +339,21 @@ def create_all_plots(csv_path, fig_dir, show=True):
     return figures
 
 
-if __name__ == "__main__":
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--no-show", action="store_true",
+        help="Save all six figures without opening plot windows.",
+    )
+    args = parser.parse_args()
+    if args.no_show:
+        plt.switch_backend("Agg")
     project_root = Path(__file__).resolve().parent.parent
     csv_path = project_root / "data" / "processed" / "ld50_cleaned.csv"
     fig_dir = project_root / "figures"
-    create_all_plots(csv_path, fig_dir)
+    create_all_plots(csv_path, fig_dir, show=not args.no_show)
+    print(f"Saved six project figures to {fig_dir}")
+
+
+if __name__ == "__main__":
+    main()

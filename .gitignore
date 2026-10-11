@@ -26,3 +26,6 @@ ENV/
 # Additional OS temporary files
 ._*
 $RECYCLE.BIN/
+
+# Local application logs
+*.log
